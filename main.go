@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
+	"github.com/fsnotify/fsevents"
 	flag "github.com/ogier/pflag"
 )
 
@@ -179,19 +179,27 @@ func main() {
 	}()
 	defer cleanup("Cleaning up.")
 
-	watcher, err := fsnotify.NewWatcher()
+	dev, err := fsevents.DeviceForPath(".")
 	if err != nil {
 		log.Fatal(err)
+		return
 	}
-	defer watcher.Close()
 
+	es := &fsevents.EventStream{
+		Paths:   []string{"."},
+		Device:  dev,
+		Latency: 100 * time.Millisecond,
+		Flags:   fsevents.FileEvents | fsevents.WatchRoot,
+	}
+	es.Start()
+	defer es.Stop()
 	changes := make(chan string)
 	broadcastChanges := make([]chan string, len(reflexes))
 	done := make(chan error)
 	for i := range reflexes {
 		broadcastChanges[i] = make(chan string)
 	}
-	go watch(".", watcher, changes, done, reflexes)
+	go watch(".", es, changes, done, reflexes)
 	go broadcast(broadcastChanges, changes)
 	go printOutput(stdout, os.Stdout)
 
